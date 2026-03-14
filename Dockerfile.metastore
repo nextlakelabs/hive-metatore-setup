@@ -1,0 +1,28 @@
+FROM apache/hive:4.0.0
+USER root
+
+# Base tools
+RUN apt-get update && apt-get install -y wget unzip curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# PostgreSQL JDBC Driver
+RUN wget https://jdbc.postgresql.org/download/postgresql-42.7.1.jar \
+    -O /opt/hive/lib/postgresql-jdbc.jar
+
+# GCS Connector (Hadoop 3)
+RUN wget https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar \
+    -O /opt/hive/lib/gcs-connector-hadoop3-2.2.21-shaded.jar
+
+# Hive + Hadoop GCS configuration
+ENV HADOOP_FS_GS_IMPL=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem
+ENV HADOOP_FS_ABSTRACTFS_GS_IMPL=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS
+
+
+# Metastore service config
+ENV HIVE_METASTORE_HOST=0.0.0.0
+ENV HIVE_METASTORE_PORT=9083
+ENV DB_TYPE=postgres
+ENV SERVICE_NAME=metastore
+ENV HOME=/home/hive
+
+USER hive

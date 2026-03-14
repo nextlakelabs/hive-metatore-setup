@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:14
+    container_name: postgres-${DEV:-dev}-metastore
+    environment:
+      POSTGRES_USER: ${DB_USER:-hive}
+      POSTGRES_PASSWORD: ${DB_PASS:-hive}
+      POSTGRES_DB: metastore_${DEV:-dev}
+    ports:
+      - "${BASE_PORT:-50}32:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - shared_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hive} -d metastore_${DEV:-dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hive-metastore:
+    build:
+      context: .
+      dockerfile: Dockerfile.metastore
+    container_name: hive-metastore-${DEV:-dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HIVE_DB_NAME: metastore_${DEV:-dev}
+      DB_DRIVER: postgres
+      SERVICE_NAME: metastore
+      # For AWS credentials
+      #AWS_PROFILE: ${AWS_PROFILE:-default}
+      #AWS_REGION: ${AWS_REGION:-us-east-1}
+      #AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      #AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      #AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      SERVICE_OPTS: >
+        -Xmx1G
+        -Dhive.metastore.uris=${HIVE_METASTORE_URI:-thrift://hive-metastore-${DEV:-dev}:9083}
+        -Dhive.metastore.warehouse.dir=${HIVE_WAREHOUSE_DIR:-gs://bucket/hive}
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres-${DEV:-dev}-metastore:5432/metastore_${DEV:-dev}
+        -Djavax.jdo.option.ConnectionUserName=${DB_USER:-hive}
+        -Djavax.jdo.option.ConnectionPassword=${DB_PASS:-hive}
+        -Dfs.gs.impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem
+        -Dfs.AbstractFileSystem.gs.impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS
+        -Dfs.gs.auth.type=APPLICATION_DEFAULT
+        -Ddatanucleus.schema.autoCreateAll=true
+    volumes:
+      - ./hive-site.xml:/opt/hive/conf/hive-site.xml
+      # Mount GCloud config for local auth if needed
+      # - ~/.config/gcloud:/root/.config/gcloud 
+    ports:
+      - "${BASE_PORT:-50}83:9083"
+    networks:
+      - shared_network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/localhost/9083' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+networks:
+  shared_network:
+    name: ${DOCKER_NETWORK:-spark-cluster-shared-network}
+    driver: ${NETWORK_DRIVER:-bridge}
+    external: ${NETWORK_IS_EXTERNAL:-false}
+
+volumes:
+  pgdata:
